@@ -229,7 +229,7 @@ mod test {
     }
 
     #[test]
-    fn test_alloc() {
+    fn push_and_get() {
         let mut ba = BlobArray::new::<Obj>(1);
         assert!(ba.drop.is_some());
 
