@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
-/// Type erased data storage
+/// Type erased data storage. This is slightly slower than normal `Vec<T>` but slightly faster than `Vec<Box<dyn Any>>`.
 pub struct BlobArray {
     block: NonNull<u8>,
     len: usize,
@@ -27,7 +27,6 @@ impl Drop for BlobArray {
 }
 
 impl BlobArray {
-    // TODO: handle zero sized type
     pub fn new<T>(capacity: usize) -> Self {
         #[inline]
         unsafe fn drop<T>(raw: *mut u8, len: usize) {
@@ -91,20 +90,38 @@ impl BlobArray {
         }
     }
 
-    unsafe fn get_raw<T>(&self, index: usize) -> *mut T {
+    #[inline(always)]
+    unsafe fn get_raw<T>(&self, index: usize) -> *mut u8 {
         debug_assert!(index < self.len);
         unsafe {
-            let raw = self.block.add(index * size_of::<T>());
-            raw.as_ptr().cast::<T>()
+            self.block.add(index * size_of::<T>()).as_ptr()
+        }
+    }
+
+    pub fn get<T>(&self, index: usize) -> Option<&T> {
+        if index >= self.len { return None }
+
+        unsafe {
+            let raw = self.get_raw::<T>(index);
+            Some(&*raw.cast::<T>())
+        }
+    }
+
+    pub fn get_mut<T>(&mut self, index: usize) -> Option<&mut T> {
+        if index >= self.len { return None }
+
+        unsafe {
+            let raw = self.get_raw::<T>(index);
+            Some(&mut *raw.cast::<T>())
         }
     }
     
-    pub fn try_get<T>(&self, index: usize) -> Option<&UnsafeCell<T>> {
+    pub fn get_cell<T>(&self, index: usize) -> Option<&UnsafeCell<T>> {
         if index >= self.len { return None }
        
         unsafe {
-            let raw = self.block.add(index * size_of::<T>());
-            let ptr = raw.as_ptr().cast::<UnsafeCell<T>>();
+            let raw = self.get_raw::<T>(index);
+            let ptr = raw.cast::<UnsafeCell<T>>();
             Some(&*ptr)
         }
     }
@@ -115,11 +132,11 @@ impl BlobArray {
         let last_index = self.len - 1;
 
         unsafe {
-            let last = self.get_raw::<T>(last_index);
+            let last = self.get_raw::<T>(last_index).cast::<T>();
             self.len -= 1;
 
             if index < last_index {
-                let to_remove = self.get_raw::<T>(index);
+                let to_remove = self.get_raw::<T>(index).cast::<T>();
                 std::ptr::swap_nonoverlapping(to_remove, last, 1);
                 Some(last.read())
             } else {
@@ -163,7 +180,7 @@ impl<'a, T: 'a> Iterator for Iter<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.source
-            .try_get::<T>(self.next)
+            .get_cell::<T>(self.next)
             .inspect(|_| self.next += 1)
     }
 }
@@ -195,7 +212,7 @@ mod test {
         ba.push(balo);
         ba.push(nunez);
     
-        let get = ba.try_get::<Obj>(1).map(|cell| unsafe {
+        let get = ba.get_cell::<Obj>(1).map(|cell| unsafe {
             let raw = cell.get();
             let this = &mut *raw;
             this.age = 0;
@@ -243,5 +260,46 @@ mod test {
             let obj = &*cell.get();
             obj.age == 0
         }))
+    }
+
+    #[test]
+    fn zst() {
+        const CAP: usize = 2;
+        struct Zst;
+        let mut ba = BlobArray::new::<Zst>(CAP);
+        for _ in 0..CAP {
+            ba.push(Zst);
+        }
+
+        unsafe {
+            let first = ba.get_raw::<Zst>(0) as usize;
+            let second = ba.get_raw::<Zst>(1) as usize;
+
+            assert_eq!(first, second);
+        }
+    }
+
+    #[test]
+    fn speed() {
+        struct NewObj {
+            _name: String,
+            _age: usize,
+        }
+
+        const NUM: usize = 1024 * 1024;
+
+        let mut ba = BlobArray::new::<NewObj>(NUM);
+        let now = std::time::Instant::now();
+        for i in 0..NUM {
+            ba.push(NewObj { _name: i.to_string(), _age: i });
+        }
+        println!("blob array push time for {NUM} objects: {:?}", now.elapsed());
+
+        let mut vec: Vec<Box<dyn std::any::Any>> = Vec::with_capacity(NUM);
+        let now = std::time::Instant::now();
+        for i in 0..NUM {
+            vec.push(Box::new(NewObj { _name: i.to_string(), _age: i }));
+        }
+        println!("vec push time for {NUM} objects: {:?}", now.elapsed());
     }
 }
