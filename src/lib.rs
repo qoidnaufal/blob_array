@@ -109,7 +109,7 @@ impl BlobArray {
         }
     }
 
-    pub fn swap_remove<T>(&mut self, index: usize) -> Option<Ptr<T>> {
+    pub fn swap_remove<T>(&mut self, index: usize) -> Option<T> {
         if index >= self.len { return None }
 
         let last_index = self.len - 1;
@@ -121,9 +121,9 @@ impl BlobArray {
             if index < last_index {
                 let to_remove = self.get_raw::<T>(index);
                 std::ptr::swap_nonoverlapping(to_remove, last, 1);
-                Some(Ptr::new(last))
+                Some(last.read())
             } else {
-                Some(Ptr::new(last))
+                Some(last.read())
             }
         }
     }
@@ -138,50 +138,6 @@ impl BlobArray {
             unsafe { drop(self.block.as_ptr(), self.len) }
             self.drop = Some(drop);
             self.len = 0;
-        }
-    }
-}
-
-pub struct Ptr<T> {
-    raw: NonNull<T>,
-}
-
-impl<T> Drop for Ptr<T> {
-    fn drop(&mut self) {
-        unsafe {
-            self.raw.drop_in_place();
-        }
-    }
-}
-
-impl<T> Ptr<T> {
-    fn new(raw: *mut T) -> Self {
-        Self {
-            raw: unsafe { NonNull::new_unchecked(raw) },
-        }
-    }
-
-    pub fn read(self) -> T {
-        unsafe {
-            self.raw.read()
-        }
-    }
-}
-
-impl<T> std::ops::Deref for Ptr<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe {
-            self.raw.as_ref()
-        }
-    }
-}
-
-impl<T> std::ops::DerefMut for Ptr<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            self.raw.as_mut()
         }
     }
 }
@@ -264,8 +220,8 @@ mod test {
         let removed = ba.swap_remove::<Obj>(to_remove);
         assert!(removed.is_some());
 
-        // let removed = removed.unwrap().read();
-        // assert!(removed.age == to_remove as _);
+        let removed = removed.unwrap();
+        assert!(removed.age == to_remove as _);
     }
 
     #[test]
