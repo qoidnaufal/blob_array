@@ -5,7 +5,9 @@ use std::num::NonZeroUsize;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
-/// Type erased data storage. This is slightly slower than normal `Vec<T>` but slightly faster than `Vec<Box<dyn Any>>`.
+/// Type erased data storage. This is slightly slower than normal `Vec<T>`,
+/// but faster than `Vec<Box<dyn Any>>` and the data are guaranteed to be stored contiguously.
+/// However, this has double the size (48) compared to a normal Vec (24) which comes from the need to carry additional informations.
 pub struct BlobArray {
     block: NonNull<u8>,
     len: usize,
@@ -303,3 +305,8 @@ mod test {
         println!("vec push time for {NUM} objects: {:?}", now.elapsed());
     }
 }
+
+// struct ElementInfo {
+//     layout: alloc::Layout,
+//     type_id: std::any::TypeId,
+// }
