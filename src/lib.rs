@@ -39,7 +39,7 @@ pub mod error {
 }
 
 #[cfg(test)]
-mod test {
+mod blob_array_test {
     use crate::type_erased::BlobArray;
     use crate::unmanaged::UnmanagedArray;
 
