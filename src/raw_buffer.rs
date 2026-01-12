@@ -171,4 +171,8 @@ impl RawBuffer {
             }
         }
     }
+
+    pub const fn capacity(&self) -> usize {
+        self.capacity
+    }
 }
